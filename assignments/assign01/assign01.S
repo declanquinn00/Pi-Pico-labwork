@@ -34,8 +34,92 @@
 main_asm:
         ldr     r0, =msg
         bl      printf
+//
+        movs    r0, #GPIO_LED_PIN           @ This value is the GPIO LED pin on the PI PICO board
+        bl      asm_gpio_init               @ Call the subroutine to initialise the GPIO pin specified by r0
+        movs    r0, #GPIO_LED_PIN           @ This value is the GPIO LED pin on the PI PICO board
+        movs    r1, #GPIO_DIR_OUT           @ We want this GPIO pin to be setup as an output pin
+        bl      asm_gpio_set_dir            @ Call the subroutine to set the GPIO pin specified by r0 to state specified by r1
+       
+        //initialise buttons
+        movs    r0, #GPIO_BTN_DN            @ This is the value of pin 20 (button)
+        bl      asm_gpio_init               @ Subroutine to initialize pin
+        
+        movs    r0, #GPIO_BTN_EN            @ This is the value of pin 21 (button)
+        bl      asm_gpio_init               @ Subroutine to initialize pin
+        
+        movs    r0, #GPIO_BTN_UP            @ This is the value of pin 22 (button)
+        bl      asm_gpio_init               @ Subroutine to initialize pin
+
+        bl    install_alrm_isr    // See below
+        bl    install_gpio_isr    // See below
+
 main_loop:
-        b       main_loop
+        bl    set_alarm           @ Set new alarm
+        wfi                       @ Wait until interrupt
+        b       main_loop         @ branch back to loop
+
+//
+// Enable alarm timer interrupts and set an alarm
+//
+
+
+set_alarm:
+        ldr     r2, =(TIMER_BASE + M0PLUS_VTOR_OFFSET)  // Enable alarm timer interrupts using the (TIMER_BASE + TIMER_INTE_OFFSET) register
+        ldr     r1, [r2]                                // Get the current timer count from (TIMER_BASE + TIMER_TIMELR_OFFSET) register
+        @ do something Compare values...
+        @ CMP r1, #X
+        @ BNE ...
+        movs    r1, #DFLT_ALARM_TIME    // Add the time delay you want to wait for to the current timer count
+        ldr     r2, =(TIMER_BASE + TIMER_ALARM0_OFFSET) // load value at TIMER_BASE + TIMER_ALARM0_OFFSET
+        str     r1, [r2] // Push the updated value to (TIMER_BASE + TIMER_ALARM0_OFFSET)
+        bx      lr      // Exit subroutine
+
+//
+// Sets up the alrm_isr in the RAM vector table and enables the correct interrupt
+//
+install_alrm_isr:
+    ldr      r2, =(PPB_BASE + M0PLUS_VTOR_OFFSET)   // Get the address of the RAM vector table using the (PPB_BASE + M0PLUS_VTOR_OFFSET) register
+    ldr      r1, =alrm_isr                          // Load value of alrm_isr address
+    str      r1, [r2, #ALRM_ISR_OFFSET]              // Store the address of the alrm_isr handler to the correct offset for ALARM0 in the vector table
+    
+    ldr      r2, =(PPB_BASE + M0PLUS_NVIC_ICPR_OFFSET) // Disable the ALARM0 IRQ by writing the correct value to (PPB_BASE + M0PLUS_NVIC_ICPR_OFFSET)                           
+    mov      r1, #0             // 
+    str      r1, [r2]           
+    
+    ldr      r2, =(PPB_BASE + M0PLUS_NVIC_ICPR_OFFSET)          // Enable the ALARM0 IRQ by writing the correct value to (PPB_BASE + M0PLUS_NVIC_ISER_OFFSET)                  
+    mov      r1, #1             // 
+    str      r1, [r2]   
+    bx       lr         // Exit subroutine
+
+
+//
+// Service the pending interrupt from the ALARM0 TIMER
+//
+alrm_isr:
+    // Perform required functionality (e.g. toggle the LED)
+    // Disable pending interrupt from TIMER by writing correct value to (TIMER_BASE + TIMER_INTR_OFFSET)
+    // Exit ISR
+
+//
+// Sets up the gpio_isr in the RAM vector table and enables the correct interrupt
+//
+install_gpio_isr:
+    // Get the address of the RAM vector table using the (PPB_BASE + M0PLUS_VTOR_OFFSET) register
+    // Store the address of the gpio_isr handler to the correct offset for GPIO in the vector table
+    // Disable the GPIO IRQ by writing the correct value to (PPB_BASE + M0PLUS_NVIC_ICPR_OFFSET)
+    // Enable the GPIO IRQ by writing the correct value to (PPB_BASE + M0PLUS_NVIC_ISER_OFFSET)
+    // Exit subroutine
+
+//
+// Service the pending interrupt from the GPIO
+//
+gpio_isr:
+    // Read the interrupt status event from the (IO_BANK0_BASE + IO_BANK0_PROC0_INTS2_OFFSET) register
+    // Detect which button was pressed by comparing to GPIO_BTN_DN_MSK, GPIO_BTN_EN_MSK and GPIO_BTN_UP_MSK
+    // Perform required functionality based on the button press event that was detected
+    // Disable the pending interrupt from GPIO by writing the correct value to (IO_BANK0_BASE + IO_BANK0_INTR2_OFFSET)
+    // Exit ISR
 
 .align 4
 msg:    .asciz "Hello World!\n"
