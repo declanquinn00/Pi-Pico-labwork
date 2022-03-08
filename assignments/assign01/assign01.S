@@ -34,7 +34,7 @@
 main_asm:
         ldr     r0, =msg
         bl      printf
-//
+        //initialise LED
         movs    r0, #GPIO_LED_PIN           @ This value is the GPIO LED pin on the PI PICO board
         bl      asm_gpio_init               @ Call the subroutine to initialise the GPIO pin specified by r0
         movs    r0, #GPIO_LED_PIN           @ This value is the GPIO LED pin on the PI PICO board
@@ -65,13 +65,15 @@ main_loop:
 
 
 set_alarm:
-        ldr     r2, =(TIMER_BASE + M0PLUS_VTOR_OFFSET)  // Enable alarm timer interrupts using the (TIMER_BASE + TIMER_INTE_OFFSET) register
-        ldr     r1, [r2]                                // Get the current timer count from (TIMER_BASE + TIMER_TIMELR_OFFSET) register
+        movs    r1, #1  //Set R1 to 1
+        ldr     r2, =(TIMER_BASE + TIMER_INTE_OFFSET)  // load address of the (TIMER_BASE + TIMER_INTE_OFFSET) register
+        str     r1, [r2]     // Enable alarm timer interrupts using the (TIMER_BASE + TIMER_INTE_OFFSET) register                           
+        ldr     r1, [TIMER_BASE + TIMER_TIMELR_OFFSET]  // Get the current timer count from (TIMER_BASE + TIMER_TIMELR_OFFSET) register !!!
         @ do something Compare values...
         @ CMP r1, #X
         @ BNE ...
         movs    r1, #DFLT_ALARM_TIME    // Add the time delay you want to wait for to the current timer count
-        ldr     r2, =(TIMER_BASE + TIMER_ALARM0_OFFSET) // load value at TIMER_BASE + TIMER_ALARM0_OFFSET
+        ldr     r2, =(TIMER_BASE + TIMER_ALARM0_OFFSET) // load value at TIMER_BASE + TIMER_ALARM0_OFFSET  //Write 1 to this?
         str     r1, [r2] // Push the updated value to (TIMER_BASE + TIMER_ALARM0_OFFSET)
         bx      lr      // Exit subroutine
 
@@ -84,7 +86,7 @@ install_alrm_isr:
     str      r1, [r2, #ALRM_ISR_OFFSET]              // Store the address of the alrm_isr handler to the correct offset for ALARM0 in the vector table
     
     ldr      r2, =(PPB_BASE + M0PLUS_NVIC_ICPR_OFFSET) // Disable the ALARM0 IRQ by writing the correct value to (PPB_BASE + M0PLUS_NVIC_ICPR_OFFSET)                           
-    mov      r1, #0             // 
+    mov      r1, #1             // 
     str      r1, [r2]           
     
     ldr      r2, =(PPB_BASE + M0PLUS_NVIC_ICPR_OFFSET)          // Enable the ALARM0 IRQ by writing the correct value to (PPB_BASE + M0PLUS_NVIC_ISER_OFFSET)                  
@@ -96,10 +98,39 @@ install_alrm_isr:
 //
 // Service the pending interrupt from the ALARM0 TIMER
 //
+.thumb_func     // Interrupt Service Routine
 alrm_isr:
-    // Perform required functionality (e.g. toggle the LED)
-    // Disable pending interrupt from TIMER by writing correct value to (TIMER_BASE + TIMER_INTR_OFFSET)
-    // Exit ISR
+    push        {lr}    // Push link register onto stack
+    bl   sub_toggle     // Perform required functionality (e.g. toggle the LED)
+    movs r1, #0         // Move 0 to r1
+    ldr  r0, =(TIMER_BASE + TIMER_INTR_OFFSET) // load address of (TIMER_BASE + TIMER_INTR_OFFSET)
+    str  r1, [r0] // Disable pending interrupt from TIMER by writing correct value to (TIMER_BASE + TIMER_INTR_OFFSET)
+    pop  {pc}     // Exit ISR
+
+
+@ Subroutine to toggle the LED GPIO pin value
+sub_toggle:
+    push    {lr}                        @ Store the link register to the stack as we will call nested subroutines
+    movs    r0, #LED_GPIO_PIN           @ Set the LED GPIO pin number to r0 for use by asm_gpio_get
+    bl      asm_gpio_get                @ Get current the value of the LED GPIO pin (returns to r0)
+    cmp     r0, #LED_VALUE_OFF          @ Check if the LED GPIO pin value is "off"
+    beq     led_set_on                  @ If it is "off" then then jump code to to turn it on
+led_set_off:
+    movs    r1, #LED_VALUE_OFF          @ The LED is currently "on" so we want to turn it "off"
+    b       led_set_state               @ Jump to portion of code where we set the state of the LED
+led_set_on:
+    movs    r1, #LED_VALUE_ON           @ The LED is currently "off" so we want to turn it "on"
+led_set_state:
+    movs    r0, #LED_GPIO_PIN           @ Set the LED GPIO pin number to r0 for use by asm_gpio_put
+    bl      asm_gpio_put                @ Update the the value of the LED GPIO pin (based on value in r1)
+exit_toggle:
+    pop     {pc}                        @ Pop the link register from the stack to the program counter
+
+
+
+
+
+
 
 //
 // Sets up the gpio_isr in the RAM vector table and enables the correct interrupt
