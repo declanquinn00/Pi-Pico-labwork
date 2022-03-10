@@ -35,14 +35,12 @@ main_asm:
         //ldr     r0, =msg
         //bl      printf
         ldr r0, =#interval
-        ldr r3, [r0]
         ldr r1, =#DFLT_ALARM_TIME
         str r1, [r0]
-        ldr r3, [r0]
         bl    init_leds           //initialise LED
         bl    init_btns                    //initialise buttons
         bl    install_alrm_isr    // See below
-        //bl    install_gpio_isr    // See below
+        bl    install_gpio_isr    // See below
 
 main_loop:
         bl    set_alarm           @ Set new alarm
@@ -54,11 +52,32 @@ init_btns:
         movs    r0, #GPIO_BTN_DN            @ This is the value of pin 20 (button)
         bl      asm_gpio_init               @ Subroutine to initialize pin
         
+        // set dir
+        ldr     r0, =#GPIO_BTN_DN
+        movs    r1, #GPIO_DIR_IN           @ We want this GPIO pin to be setup as an output pin
+        bl      asm_gpio_set_dir            @ Call the subroutine to set the GPIO pin specified by r0 to state specified by r1     
+
+        ldr     r0, =#GPIO_BTN_DN            @ pin
+        ldr     r1, =#1
+        ldr     r2, =#1 
+        bl      gpio_set_irq_enabled        @ function to enable interrupt
+
         movs    r0, #GPIO_BTN_EN            @ This is the value of pin 21 (button)
         bl      asm_gpio_init               @ Subroutine to initialize pin
         
+        ldr     r0, =#GPIO_BTN_EN            @ pin
+        ldr     r1, =#1
+        ldr     r2, =#1 
+        bl      gpio_set_irq_enabled        @ function to enable interrupt
+
         movs    r0, #GPIO_BTN_UP            @ This is the value of pin 22 (button)
         bl      asm_gpio_init               @ Subroutine to initialize pin
+
+        ldr     r0, =#GPIO_BTN_UP            @ pin
+        ldr     r1, =#1
+        ldr     r2, =#1 
+        bl      gpio_set_irq_enabled        @ function to enable interrupt
+
         pop     {pc}
 
 init_leds:
@@ -99,13 +118,16 @@ install_alrm_isr:
     ldr      r2, [r2]   // get address of vector table // get [r2]
     str      r1, [r2, #ALRM_ISR_OFFSET]              // Store the address of the alrm_isr handler to the correct offset for ALARM0 in the vector table
     
-    ldr      r2, =(PPB_BASE + M0PLUS_NVIC_ICPR_OFFSET) // (Interupt clear pending reg) (Disable waiting interrupt in queue) Disable the ALARM0 IRQ by writing the correct value to (PPB_BASE + M0PLUS_NVIC_ICPR_OFFSET)                           
+    ldr      r2, =(PPB_BASE + M0PLUS_NVIC_ICPR_OFFSET) // (Interupt clear pending reg) (Disable waiting interrupt in queue) Disable the ALARM0 IRQ by writing the correct value to (PPB_BASE + M0PLUS_NVIC_ICPR_OFFSET)                       
     ldr      r1, =#1             // write 1 to disable bit0 is the alarm0 interrupt
     str      r1, [r2]           
-    
+     
+
     ldr      r2, =(PPB_BASE + M0PLUS_NVIC_ISER_OFFSET)          //(Interrupt set enable register) Enables the interrupt Enable the ALARM0 IRQ by writing the correct value to (PPB_BASE + M0PLUS_NVIC_ISER_OFFSET)                  
+    ldr      r3, [r2]   //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     ldr      r1, =#1             // write 1 to enable
     str      r1, [r2]   
+    ldr      r3, [r2]   //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     bx       lr         // Exit subroutine
 
 
@@ -153,19 +175,24 @@ install_gpio_isr:
     ldr r1, [r1]                                // get address stored in r1
     str r2, [r1, GPIO_ISR_OFFSET]               // Store the address of the gpio_isr handler to the correct offset for GPIO in the vector table
     ldr r1, =(PPB_BASE + M0PLUS_NVIC_ICPR_OFFSET) // Disable the GPIO IRQ by writing the correct value to (PPB_BASE + M0PLUS_NVIC_ICPR_OFFSET)
-    ldr r2, =#0x2000
-    adds r2, #1 //bit 13 and bit 0
+    ldr r3, [r1]    //TESTING!!!!!!!!!!!!!!
+    ldr r2, =#0x2000  //=#0x2000
+    //adds r2, #1 //bit 13 and bit 0 ?????????
     //ldr  r0, =#13
     //lsl  r2, r0
     str  r2, [r1]
+    ldr  r3,  [r1]  //TESTING!!!!!!!!!!!!!!!!!!
 
     
     ldr r1, =(PPB_BASE + M0PLUS_NVIC_ISER_OFFSET)// Enable the GPIO IRQ by writing the correct value to (PPB_BASE + M0PLUS_NVIC_ISER_OFFSET)
+    ldr r0, [r1]    
     ldr r2, =#0x2000 //bit 13 and bit 0
-    adds r2, #1
+    //orrs  r3, r2, r0
+    adds r2, #9 //value in r0
     //ldr  r0, =#13
     //lsl  r2, r0
     str  r2, [r1]
+    ldr  r3,  [r1]  //TESTING!!!!!!!!!!!!!!!!!!
     
     pop {pc}    // Exit subroutine
 
@@ -175,8 +202,11 @@ install_gpio_isr:
 .thumb_func             // ISR
 gpio_isr:
     push    {lr}
-    //ldr r1, [IO_BANK0_BASE, IO_BANK0_PROC0_INTS2_OFFSET]   // Read the interrupt status event from the (IO_BANK0_BASE + IO_BANK0_PROC0_INTS2_OFFSET) register
+    ldr r1, =(IO_BANK0_BASE + IO_BANK0_PROC0_INTS2_OFFSET)   // Read the interrupt status event from the (IO_BANK0_BASE + IO_BANK0_PROC0_INTS2_OFFSET) register
+    ldr r1, [r1]    // get value of interrupt status event
+
     // Detect which button was pressed by comparing to GPIO_BTN_DN_MSK, GPIO_BTN_EN_MSK and GPIO_BTN_UP_MSK
+    // Perform required functionality based on the button press event that was detected
     //gp20
     ldr r2, =#GPIO_BTN_DN_MSK // load buttn down mask
     ands r2, r1  // mask value              ////////////
@@ -204,8 +234,11 @@ gpio_isr:
     movs r3, r3, lsl #1    //multiply inverval by 2
 
     endbttncheck:
-    // Perform required functionality based on the button press event that was detected
-    // Disable the pending interrupt from GPIO by writing the correct value to (IO_BANK0_BASE + IO_BANK0_INTR2_OFFSET)
+    
+    ldr r1, =(IO_BANK0_BASE + IO_BANK0_INTR2_OFFSET) // Disable the pending interrupt from GPIO by writing the correct value to (IO_BANK0_BASE + IO_BANK0_INTR2_OFFSET)
+    ldr r3, [r1] //TESTING
+    ldr r0, =#0
+    str r0, [r1]
     pop {pc}    // Exit ISR
 
 
