@@ -73,7 +73,7 @@ init_btns:
         movs    r0, #GPIO_BTN_UP            @ This is the value of pin 22 (button)
         bl      asm_gpio_init               @ Subroutine to initialize pin
 
-        ldr     r0, =#GPIO_BTN_UP            @ pin
+        ldr     r0, =#GPIO_BTN_UP            @ pin ...........
         ldr     r1, =#1
         ldr     r2, =#1 
         bl      gpio_set_irq_enabled        @ function to enable interrupt
