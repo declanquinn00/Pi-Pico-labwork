@@ -38,7 +38,7 @@ main_asm:
         ldr r1, =#DFLT_ALARM_TIME
         str r1, [r0]
         bl    init_leds           //initialise LED
-        bl    init_btns                    //initialise buttons
+        bl    init_btns           //initialise buttons
         bl    install_alrm_isr    // See below
         bl    install_gpio_isr    // See below
 
@@ -54,11 +54,11 @@ init_btns:
         
         // set dir
         ldr     r0, =#GPIO_BTN_DN
-        movs    r1, #GPIO_DIR_IN           @ We want this GPIO pin to be setup as an output pin
-        bl      asm_gpio_set_dir            @ Call the subroutine to set the GPIO pin specified by r0 to state specified by r1     
+        movs    r1, #GPIO_DIR_OUT           @ We want this GPIO pin to be setup as an output pin
+        //bl      asm_gpio_set_dir            @ Call the subroutine to set the GPIO pin specified by r0 to state specified by r1     
 
         ldr     r0, =#GPIO_BTN_DN            @ pin
-        ldr     r1, =#1
+        ldr     r1, =#4
         ldr     r2, =#1 
         bl      gpio_set_irq_enabled        @ function to enable interrupt
 
@@ -66,7 +66,7 @@ init_btns:
         bl      asm_gpio_init               @ Subroutine to initialize pin
         
         ldr     r0, =#GPIO_BTN_EN            @ pin
-        ldr     r1, =#1
+        ldr     r1, =#4
         ldr     r2, =#1 
         bl      gpio_set_irq_enabled        @ function to enable interrupt
 
@@ -74,7 +74,7 @@ init_btns:
         bl      asm_gpio_init               @ Subroutine to initialize pin
 
         ldr     r0, =#GPIO_BTN_UP            @ pin ...........
-        ldr     r1, =#1
+        ldr     r1, =#4
         ldr     r2, =#1 
         bl      gpio_set_irq_enabled        @ function to enable interrupt
 
@@ -140,7 +140,9 @@ alrm_isr:       // Write this to vector table position
     bl   sub_toggle     // Perform required functionality (e.g. toggle the LED)
     movs r1, #1         // Move 0 to r1 //Write 1
     ldr  r0, =(TIMER_BASE + TIMER_INTR_OFFSET) // load address of (TIMER_BASE + TIMER_INTR_OFFSET)
+    ldr r3, [r0]    // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     str  r1, [r0] // Disable pending interrupt from TIMER by writing correct value to (TIMER_BASE + TIMER_INTR_OFFSET)
+    ldr r3, [r0]    //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     pop  {pc}     // Exit ISRInterrupt Service Routine
 
 
@@ -215,6 +217,10 @@ gpio_isr:
     ldr  r0, =interval  //load time interval
     ldr  r3, [r0]   
     movs r3, r3, lsr #1 // divide interval by 2 
+    str  r3, [r0]   // store new time interval
+    ldr r3, =(IO_BANK0_BASE + IO_BANK0_INTR2_OFFSET) // Disable the pending interrupt from GPIO by writing the correct value to (IO_BANK0_BASE + IO_BANK0_INTR2_OFFSET)
+    ldr r0, =0x00040000 // override gpio 20 falling edge
+    str r0, [r3]
 
     //gp 21
     gp21:
@@ -222,6 +228,25 @@ gpio_isr:
     ands r2, r1  // mask value              ////////////
     cmp  r2, #0 // check if gp21 enabled
     beq  gp22
+    //check state
+    ldr r0, =flashing_state // load flashing state address
+    ldr r0, [r0] // get flashing state value
+    ldr r4, =#1  // load value we set to
+    cmp r0, #0
+    beq state_set
+    // stop flashing
+    ldr      r3, =(PPB_BASE + M0PLUS_NVIC_ISER_OFFSET)          //(Interrupt set enable register) Enables the interrupt Enable the ALARM0 IRQ by writing the correct value to (PPB_BASE + M0PLUS_NVIC_ISER_OFFSET)
+    str r4, [r3] //disable
+    b   end_state_check
+    state_set:
+    ldr      r3, =(PPB_BASE + M0PLUS_NVIC_ISER_OFFSET)          //(Interrupt set enable register) Enables the interrupt Enable the ALARM0 IRQ by writing the correct value to (PPB_BASE + M0PLUS_NVIC_ISER_OFFSET)
+    str r4, [r3] // enable
+    // enable flashing
+    end_state_check:
+
+    ldr r3, =(IO_BANK0_BASE + IO_BANK0_INTR2_OFFSET) // Disable the pending interrupt from GPIO by writing the correct value to (IO_BANK0_BASE + IO_BANK0_INTR2_OFFSET)
+    ldr r0, =0x00400000 // override gpio 21 falling edge
+    str r0, [r3]
     
     //gp 22
     gp22:
@@ -232,13 +257,11 @@ gpio_isr:
     ldr  r0, =interval  // load interval value
     ldr  r3, [r0]
     movs r3, r3, lsl #1    //multiply inverval by 2
-
+    str  r3, [r0]       // store new time interval
+    ldr r3, =(IO_BANK0_BASE + IO_BANK0_INTR2_OFFSET) // Disable the pending interrupt from GPIO by writing the correct value to (IO_BANK0_BASE + IO_BANK0_INTR2_OFFSET)
+    ldr r0, =0x04000000 // override gpio 21 falling edge
+    str r0, [r3]
     endbttncheck:
-    
-    ldr r1, =(IO_BANK0_BASE + IO_BANK0_INTR2_OFFSET) // Disable the pending interrupt from GPIO by writing the correct value to (IO_BANK0_BASE + IO_BANK0_INTR2_OFFSET)
-    ldr r3, [r1] //TESTING
-    ldr r0, =#0
-    str r0, [r1]
     pop {pc}    // Exit ISR
 
 
@@ -247,12 +270,12 @@ msg:    .asciz "Hello World!\n"
 alarmToggle: .asciz "Toggled alarm\n"
 .data
 
+lstate: .word   DFLT_STATE_STRT
+ltimer: .word   DFLT_ALARM_TIME
+
+flashing_state:
+    .space 4
+
 interval:
     .space 4
     .end
-flashing_state:
-    .space 4
-    .end
-
-lstate: .word   DFLT_STATE_STRT
-ltimer: .word   DFLT_ALARM_TIME
