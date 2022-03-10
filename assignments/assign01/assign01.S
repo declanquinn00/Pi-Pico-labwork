@@ -32,8 +32,13 @@
 
 @ Entry point to the ASM portion of the program
 main_asm:
-        ldr     r0, =msg
-        bl      printf
+        //ldr     r0, =msg
+        //bl      printf
+        ldr r0, =#interval
+        ldr r3, [r0]
+        ldr r1, =#DFLT_ALARM_TIME
+        str r1, [r0]
+        ldr r3, [r0]
         bl    init_leds           //initialise LED
         bl    init_btns                    //initialise buttons
         bl    install_alrm_isr    // See below
@@ -74,13 +79,14 @@ set_alarm:
         str     r1, [r2]     // Enable alarm timer interrupts using the (TIMER_BASE + TIMER_INTE_OFFSET) register                           
         ldr     r1, =(TIMER_BASE + TIMER_TIMELR_OFFSET)  // load address from (TIMER_BASE + TIMER_TIMELR_OFFSET) register
         ldr     r1, [r1]        // Get the current timer count from (TIMER_BASE + TIMER_TIMELR_OFFSET) register // Current time
-        @ do something Compare values...
+        @ do something Compare values...    // set flashing state
         @ CMP r1, #X
         @ BNE ...
-        ldr     r2, =DFLT_ALARM_TIME    // Add the time delay you want to wait for to the current timer count //DEFAULT
+        ldr     r2, =interval
+        ldr     r2, [r2]
+        //ldr     r2, =DFLT_ALARM_TIME    // Add the time delay you want to wait for to the current timer count //DEFAULT
         adds r1, r1, r2 //Add current and default time
         ldr     r2, =(TIMER_BASE + TIMER_ALARM0_OFFSET) // load value at TIMER_BASE + TIMER_ALARM0_OFFSET  // when alarm0 = timeLR_offset cause interrupt
-        ldr     r3, [r2]        //TESTING!!!!!!!!!!!!!!!
         str     r1, [r2] // Push the updated value to (TIMER_BASE + TIMER_ALARM0_OFFSET)
         pop  {pc}      // Exit subroutine
 
@@ -110,10 +116,6 @@ install_alrm_isr:
 alrm_isr:       // Write this to vector table position
     push        {lr}    // Push link register onto stack
     bl   sub_toggle     // Perform required functionality (e.g. toggle the LED)
-    //ldr     r2, =(TIMER_BASE + TIMER_INTR_OFFSET) // load address of (TIMER_BASE + TIMER_INTR_OFFSET) //Tells us that interrupt is done
-    //ldr     r3, [r2]    //TESTING!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    //movs    r1, #1      //write 1 to that
-    //str     r1, [r2]
     movs r1, #1         // Move 0 to r1 //Write 1
     ldr  r0, =(TIMER_BASE + TIMER_INTR_OFFSET) // load address of (TIMER_BASE + TIMER_INTR_OFFSET)
     str  r1, [r0] // Disable pending interrupt from TIMER by writing correct value to (TIMER_BASE + TIMER_INTR_OFFSET)
@@ -172,15 +174,52 @@ install_gpio_isr:
 //
 .thumb_func             // ISR
 gpio_isr:
-    // Read the interrupt status event from the (IO_BANK0_BASE + IO_BANK0_PROC0_INTS2_OFFSET) register
+    push    {lr}
+    //ldr r1, [IO_BANK0_BASE, IO_BANK0_PROC0_INTS2_OFFSET]   // Read the interrupt status event from the (IO_BANK0_BASE + IO_BANK0_PROC0_INTS2_OFFSET) register
     // Detect which button was pressed by comparing to GPIO_BTN_DN_MSK, GPIO_BTN_EN_MSK and GPIO_BTN_UP_MSK
+    //gp20
+    ldr r2, =#GPIO_BTN_DN_MSK // load buttn down mask
+    ands r2, r1  // mask value              ////////////
+    cmp  r2, #0 //check if gp20 enabled
+    beq  gp21   // branch to next if not
+    ldr  r0, =interval  //load time interval
+    ldr  r3, [r0]   
+    movs r3, r3, lsr #1 // divide interval by 2 
+
+    //gp 21
+    gp21:
+    ldr r2, =#GPIO_BTN_EN_MSK // load button en mask
+    ands r2, r1  // mask value              ////////////
+    cmp  r2, #0 // check if gp21 enabled
+    beq  gp22
+    
+    //gp 22
+    gp22:
+    ldr r2, =#GPIO_BTN_UP_MSK // load button up mask
+    ands r2, r1     //mask value            //////////////
+    cmp  r2, #0 // check if gp22 enabled
+    beq  endbttncheck   // end if not enabled
+    ldr  r0, =interval  // load interval value
+    ldr  r3, [r0]
+    movs r3, r3, lsl #1    //multiply inverval by 2
+
+    endbttncheck:
     // Perform required functionality based on the button press event that was detected
     // Disable the pending interrupt from GPIO by writing the correct value to (IO_BANK0_BASE + IO_BANK0_INTR2_OFFSET)
-    // Exit ISR
+    pop {pc}    // Exit ISR
+
 
 .align 4
 msg:    .asciz "Hello World!\n"
 alarmToggle: .asciz "Toggled alarm\n"
 .data
+
+interval:
+    .space 4
+    .end
+flashing_state:
+    .space 4
+    .end
+
 lstate: .word   DFLT_STATE_STRT
 ltimer: .word   DFLT_ALARM_TIME
