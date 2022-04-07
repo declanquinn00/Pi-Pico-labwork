@@ -25,5 +25,6 @@
     "files.associations": {
         "*.S": "arm",
         "*.h": "c"
-    }
+    },
+    "cortex-debug.variableUseNaturalFormat": true
 }
